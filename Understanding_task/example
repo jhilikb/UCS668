@@ -1,1 +1,4 @@
-
+Download this folder in your UCS668, navigate inside   
+cd Understanding_task  
+and run the command   
+streamlit run tasksel.py
