@@ -189,7 +189,7 @@ class SimpleMLP(nn.Module):
 
             if batchnorm:
                 block.append(
-                    nn.BatchNorm1d(filters)
+                    nn.BatchNorm2d(filters)
                 )
 
             block.append(
