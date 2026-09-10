@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stochastic Gradient Descent Visualizer</title>
+    <!-- Plotly.js for 3D rendering -->
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --text-color: #f8fafc;
+            --accent-color: #38bdf8;
+            --border-color: #334155;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 1.8rem;
+            color: var(--accent-color);
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+            justify-content: center;
+        }
+
+        .control-panel {
+            background-color: var(--panel-bg);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            flex: 1;
+            min-width: 300px;
+            max-width: 380px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            height: fit-content;
+        }
+
+        .plot-panel {
+            background-color: var(--panel-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            flex: 2;
+            min-width: 350px;
+            height: 600px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .control-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .value-display {
+            color: var(--accent-color);
+            float: right;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-color);
+        }
+
+        select {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            outline: none;
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 10px 16px;
+            border-radius: 6px;
+            border: none;
+            background-color: var(--accent-color);
+            color: #0f172a;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button.secondary {
+            background-color: transparent;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+
+        .stats {
+            background-color: var(--bg-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .stats div {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Stochastic Gradient Descent Visualizer</h1>
+
+    <div class="container">
+        <!-- Controls -->
+        <div class="control-panel">
+            <div class="control-group">
+                <label>Loss Surface Function</label>
+                <select id="surfaceSelect" onchange="resetTrajectory()">
+                    <option value="saddle">Saddle Point / Non-Convex</option>
+                    <option value="bowl">Convex Bowl (Quadratic)</option>
+                    <option value="rosenbrock">Rosenbrock Valley</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Learning Rate ($\eta$): <span id="lrVal" class="value-display">0.05</span></label>
+                <input type="range" id="lrInput" min="0.001" max="0.3" step="0.005" value="0.05" oninput="updateControls()">
+            </div>
+
+            <div class="control-group">
+                <label>Stochastic Noise Level: <span id="noiseVal" class="value-display">0.30</span></label>
+                <input type="range" id="noiseInput" min="0.0" max="1.0" step="0.05" value="0.30" oninput="updateControls()">
+            </div>
+
+            <div class="control-group">
+                <label>Momentum ($\beta$): <span id="momentumVal" class="value-display">0.00</span></label>
+                <input type="range" id="momentumInput" min="0.0" max="0.9" step="0.05" value="0.00" oninput="updateControls()">
+            </div>
+
+            <div class="btn-group">
+                <button onclick="stepSGD()">Step (1x)</button>
+                <button id="playBtn" onclick="togglePlay()">Auto Play</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <button class="secondary" style="width: 100%;" onclick="resetTrajectory()">Reset Trajectory</button>
+            </div>
+
+            <div class="stats">
+                <div>Step: <span id="stepStat">0</span></div>
+                <div>w1: <span id="w1Stat">0.000</span></div>
+                <div>w2: <span id="w2Stat">0.000</span></div>
+                <div>Loss: <span id="lossStat">0.000</span></div>
+            </div>
+        </div>
+
+        <!-- 3D Surface Display -->
+        <div class="plot-panel" id="plotlyDiv"></div>
+    </div>
+
+    <script>
+        // Loss Surface Equations & Gradients
+        const surfaces = {
+            saddle: {
+                f: (w1, w2) => 0.1 * (w1**2 - w2**2) + 0.1 * (w1**4 + w2**4) + 0.1 * Math.sin(w1*3) + 0.1 * Math.cos(w2*3),
+                grad: (w1, w2) => [
+                    0.2 * w1 + 0.4 * (w1**3) + 0.3 * Math.cos(w1*3),
+                    -0.2 * w2 + 0.4 * (w2**3) - 0.3 * Math.sin(w2*3)
+                ],
+                range: [-2.2, 2.2],
+                start: [-1.8, 1.8]
+            },
+            bowl: {
+                f: (w1, w2) => 0.5 * (w1**2 + 3 * w2**2),
+                grad: (w1, w2) => [w1, 3 * w2],
+                range: [-2.5, 2.5],
+                start: [-2.0, 2.0]
+            },
+            rosenbrock: {
+                f: (w1, w2) => (1 - w1)**2 + 10 * (w2 - w1**2)**2,
+                grad: (w1, w2) => [
+                    -2 * (1 - w1) - 40 * w1 * (w2 - w1**2),
+                    20 * (w2 - w1**2)
+                ],
+                range: [-2.0, 2.0],
+                start: [-1.2, 1.5]
+            }
+        };
+
+        let currentType = 'saddle';
+        let trajectory = { w1: [], w2: [], loss: [] };
+        let v_w1 = 0, v_w2 = 0; // Momentum velocities
+        let isPlaying = false;
+        let playInterval = null;
+
+        function updateControls() {
+            document.getElementById('lrVal').innerText = parseFloat(document.getElementById('lrInput').value).toFixed(3);
+            document.getElementById('noiseVal').innerText = parseFloat(document.getElementById('noiseInput').value).toFixed(2);
+            document.getElementById('momentumVal').innerText = parseFloat(document.getElementById('momentumInput').value).toFixed(2);
+        }
+
+        function createSurfaceData(surfaceKey) {
+            const config = surfaces[surfaceKey];
+            const size = 50;
+            const range = config.range;
+            const step = (range[1] - range[0]) / size;
+            
+            let xArr = [], yArr = [], zMatrix = [];
+
+            for (let i = 0; i <= size; i++) {
+                xArr.push(range[0] + i * step);
+                yArr.push(range[0] + i * step);
+            }
+
+            for (let j = 0; j <= size; j++) {
+                let row = [];
+                for (let i = 0; i <= size; i++) {
+                    row.push(config.f(xArr[i], yArr[j]));
+                }
+                zMatrix.push(row);
+            }
+
+            return { x: xArr, y: yArr, z: zMatrix };
+        }
+
+        function initPlot() {
+            currentType = document.getElementById('surfaceSelect').value;
+            const surfData = createSurfaceData(currentType);
+
+            const surfaceTrace = {
+                type: 'surface',
+                x: surfData.x,
+                y: surfData.y,
+                z: surfData.z,
+                colorscale: 'Viridis',
+                opacity: 0.85,
+                showscale: false
+            };
+
+            const trajectoryTrace = {
+                type: 'scatter3d',
+                mode: 'lines+markers',
+                x: trajectory.w1,
+                y: trajectory.w2,
+                z: trajectory.loss,
+                line: { color: '#ef4444', width: 6 },
+                marker: { size: 4, color: '#f8fafc' },
+                name: 'SGD Path'
+            };
+
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { l: 0, r: 0, b: 0, t: 0 },
+                scene: {
+                    xaxis: { title: 'w1', gridcolor: '#334155', zerolinecolor: '#334155' },
+                    yaxis: { title: 'w2', gridcolor: '#334155', zerolinecolor: '#334155' },
+                    zaxis: { title: 'Loss', gridcolor: '#334155', zerolinecolor: '#334155' },
+                    camera: { eye: { x: 1.5, y: 1.5, z: 1.2 } }
+                }
+            };
+
+            Plotly.newPlot('plotlyDiv', [surfaceTrace, trajectoryTrace], layout, {responsive: true});
+        }
+
+        function resetTrajectory() {
+            if (isPlaying) togglePlay();
+            
+            currentType = document.getElementById('surfaceSelect').value;
+            const startPos = surfaces[currentType].start;
+            const initialLoss = surfaces[currentType].f(startPos[0], startPos[1]);
+
+            trajectory = {
+                w1: [startPos[0]],
+                w2: [startPos[1]],
+                loss: [initialLoss]
+            };
+
+            v_w1 = 0;
+            v_w2 = 0;
+
+            updateStats();
+            initPlot();
+        }
+
+        function stepSGD() {
+            const lr = parseFloat(document.getElementById('lrInput').value);
+            const noiseScale = parseFloat(document.getElementById('noiseInput').value);
+            const beta = parseFloat(document.getElementById('momentumInput').value);
+
+            let currW1 = trajectory.w1[trajectory.w1.length - 1];
+            let currW2 = trajectory.w2[trajectory.w2.length - 1];
+
+            // True deterministic gradient
+            const [trueGrad1, trueGrad2] = surfaces[currentType].grad(currW1, currW2);
+
+            // Add Gaussian noise to simulate stochastic mini-batch gradient estimation
+            const u1 = Math.random(), u2 = Math.random();
+            const randStdNormal1 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+            const randStdNormal2 = Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2);
+
+            const stochGrad1 = trueGrad1 + noiseScale * randStdNormal1;
+            const stochGrad2 = trueGrad2 + noiseScale * randStdNormal2;
+
+            // Gradient Descent Update with Momentum
+            v_w1 = beta * v_w1 + lr * stochGrad1;
+            v_w2 = beta * v_w2 + lr * stochGrad2;
+
+            const nextW1 = currW1 - v_w1;
+            const nextW2 = currW2 - v_w2;
+            const nextLoss = surfaces[currentType].f(nextW1, nextW2);
+
+            trajectory.w1.push(nextW1);
+            trajectory.w2.push(nextW2);
+            trajectory.loss.push(nextLoss);
+
+            updateStats();
+
+            // Update Plotly trace
+            Plotly.restyle('plotlyDiv', {
+                x: [trajectory.w1],
+                y: [trajectory.w2],
+                z: [trajectory.loss]
+            }, [1]);
+        }
+
+        function updateStats() {
+            const steps = trajectory.w1.length - 1;
+            document.getElementById('stepStat').innerText = steps;
+            document.getElementById('w1Stat').innerText = trajectory.w1[steps].toFixed(4);
+            document.getElementById('w2Stat').innerText = trajectory.w2[steps].toFixed(4);
+            document.getElementById('lossStat').innerText = trajectory.loss[steps].toFixed(4);
+        }
+
+        function togglePlay() {
+            const btn = document.getElementById('playBtn');
+            if (isPlaying) {
+                clearInterval(playInterval);
+                btn.innerText = 'Auto Play';
+                isPlaying = false;
+            } else {
+                playInterval = setInterval(stepSGD, 150);
+                btn.innerText = 'Pause';
+                isPlaying = true;
+            }
+        }
+
+        // Initialize on load
+        window.onload = () => {
+            updateControls();
+            resetTrajectory();
+        };
+    </script>
+</body>
+</html>
