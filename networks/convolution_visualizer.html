@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Convolution Visualizer: Padding, Stride & Dilation</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['Fira Code', 'monospace'],
+          },
+          colors: {
+            pad: '#334155',
+            inputBg: '#0f172a',
+            kernelBg: '#7c2d12',
+            kernelBorder: '#f97316',
+            dilatedGap: '#991b1b',
+            outputBg: '#312e81',
+            outputBorder: '#6366f1',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .grid-cell {
+      transition: all 0.2s ease-in-out;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 overflow-x-hidden">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/30">
+          <i data-lucide="grid" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-300 to-emerald-400">
+            2D Convolution Explorer
+          </h1>
+          <p class="text-xs text-slate-400">Interactive Visualization of Padding, Stride & Dilation in CNNs</p>
+        </div>
+      </div>
+
+      <!-- Quick Preset Selector -->
+      <div class="flex items-center space-x-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 text-xs">
+        <span class="text-slate-400 pl-2 font-medium">Presets:</span>
+        <button onclick="loadPreset('standard')" class="px-2.5 py-1 rounded-lg hover:bg-slate-700 transition font-medium text-slate-200">Standard</button>
+        <button onclick="loadPreset('same')" class="px-2.5 py-1 rounded-lg hover:bg-slate-700 transition font-medium text-slate-200">Same Pad</button>
+        <button onclick="loadPreset('strided')" class="px-2.5 py-1 rounded-lg hover:bg-slate-700 transition font-medium text-slate-200">Strided (S=2)</button>
+        <button onclick="loadPreset('dilated')" class="px-2.5 py-1 rounded-lg hover:bg-slate-700 transition font-medium text-slate-200">Dilated (D=2)</button>
+        <button onclick="loadPreset('complex')" class="px-2.5 py-1 rounded-lg hover:bg-slate-700 transition font-medium text-amber-300">Combined</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Grid -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Controls Sidebar -->
+    <div class="lg:col-span-4 space-y-5">
+      
+      <!-- Parameter Sliders Box -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2 border-b border-slate-800 pb-3">
+          <i data-lucide="sliders" class="w-4 h-4 text-indigo-400"></i> Hyperparameters
+        </h2>
+
+        <!-- Input Dimensions -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs font-medium">
+            <span class="text-slate-400">Input Size ($H \times W$):</span>
+            <span id="input-size-val" class="text-indigo-400 font-mono font-bold">5 × 5</span>
+          </div>
+          <input type="range" id="input-size" min="3" max="8" value="5" step="1" 
+            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+        </div>
+
+        <!-- Kernel Size -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs font-medium">
+            <span class="text-slate-400">Kernel Size ($K \times K$):</span>
+            <span id="kernel-size-val" class="text-amber-400 font-mono font-bold">3 × 3</span>
+          </div>
+          <input type="range" id="kernel-size" min="1" max="5" value="3" step="1" 
+            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500">
+        </div>
+
+        <!-- Padding -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs font-medium">
+            <span class="text-slate-400">Padding ($P$):</span>
+            <span id="padding-val" class="text-sky-400 font-mono font-bold">1</span>
+          </div>
+          <input type="range" id="padding" min="0" max="3" value="1" step="1" 
+            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500">
+          <p class="text-[11px] text-slate-500">Zero-padding added to all 4 borders around input matrix.</p>
+        </div>
+
+        <!-- Stride -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs font-medium">
+            <span class="text-slate-400">Stride ($S$):</span>
+            <span id="stride-val" class="text-emerald-400 font-mono font-bold">1</span>
+          </div>
+          <input type="range" id="stride" min="1" max="3" value="1" step="1" 
+            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+          <p class="text-[11px] text-slate-500">Step size when shifting kernel across rows and columns.</p>
+        </div>
+
+        <!-- Dilation -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs font-medium">
+            <span class="text-slate-400">Dilation ($D$):</span>
+            <span id="dilation-val" class="text-rose-400 font-mono font-bold">1</span>
+          </div>
+          <input type="range" id="dilation" min="1" max="3" value="1" step="1" 
+            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500">
+          <p class="text-[11px] text-slate-500">Spacing between kernel elements (Atrous convolution).</p>
+        </div>
+
+        <!-- Kernel Preset Selector -->
+        <div class="pt-2 border-t border-slate-800">
+          <label class="block text-xs font-medium text-slate-400 mb-1.5">Kernel Weight Pattern:</label>
+          <select id="kernel-preset" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg p-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <option value="sobel-v">Vertical Edge Detector (Sobel)</option>
+            <option value="sobel-h">Horizontal Edge Detector</option>
+            <option value="sharpen">Sharpen Filter</option>
+            <option value="outline">Outline / Laplacian</option>
+            <option value="ones">All Ones (Box Blur Filter)</option>
+            <option value="identity">Identity</option>
+          </select>
+        </div>
+
+      </div>
+
+      <!-- Formula Breakdown Box -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+        <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2 border-b border-slate-800 pb-2">
+          <i data-lucide="calculator" class="w-4 h-4 text-emerald-400"></i> Output Dimension Formula
+        </h2>
+
+        <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 overflow-x-auto">
+          $$O = \left\lfloor \frac{H + 2P - D(K - 1) - 1}{S} \right\rfloor + 1$$
+        </div>
+
+        <div id="formula-calculation" class="space-y-1.5 text-xs text-slate-300 font-mono bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+          <!-- Dynamic formula breakdown inserted here via JS -->
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-center pt-1 text-xs">
+          <div class="p-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <span class="block text-[10px] text-slate-400">Effective Kernel Size</span>
+            <span id="effective-kernel" class="font-mono font-bold text-amber-400 text-sm">3 × 3</span>
+          </div>
+          <div class="p-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <span class="block text-[10px] text-slate-400">Receptive Field Spanning</span>
+            <span id="receptive-field" class="font-mono font-bold text-indigo-400 text-sm">3 × 3</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PyTorch Equivalent Code Snippet -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-2">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+          <h2 class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+            <i data-lucide="code" class="w-4 h-4 text-amber-400"></i> PyTorch Equivalent
+          </h2>
+          <button onclick="copyCode()" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded text-slate-300 flex items-center gap-1 transition">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy
+          </button>
+        </div>
+        <pre class="p-3 bg-slate-950 rounded-xl text-[11px] font-mono text-emerald-400 overflow-x-auto leading-relaxed border border-slate-800"><code id="pytorch-code"># PyTorch Conv2d Definition
+conv = nn.Conv2d(
+    in_channels=1, 
+    out_channels=1, 
+    kernel_size=3, 
+    stride=1, 
+    padding=1, 
+    dilation=1
+)</code></pre>
+      </div>
+
+    </div>
+
+    <!-- Right Workspace: Interactive Grids & Calculation Inspection -->
+    <div class="lg:col-span-8 space-y-6 flex flex-col">
+
+      <!-- Interactive Playback Toolbar -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4">
+        
+        <!-- Controls -->
+        <div class="flex items-center space-x-2">
+          <button id="btn-first" onclick="goToStep(0)" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition" title="First Step">
+            <i data-lucide="chevrons-left" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-prev" onclick="stepBackward()" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition" title="Previous Step">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-play" onclick="togglePlay()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition flex items-center space-x-1.5 shadow-lg shadow-indigo-600/30 font-semibold text-xs">
+            <i id="play-icon" data-lucide="play" class="w-4 h-4"></i>
+            <span id="play-text">Play Visualizer</span>
+          </button>
+          <button id="btn-next" onclick="stepForward()" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition" title="Next Step">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-last" onclick="goToStep(totalSteps - 1)" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition" title="Last Step">
+            <i data-lucide="chevrons-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Step Indicator & Slider -->
+        <div class="flex-1 min-w-[200px] flex items-center space-x-3 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+          <span class="text-xs text-slate-400 whitespace-nowrap font-medium">Step:</span>
+          <input type="range" id="step-slider" min="0" max="0" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+          <span id="step-counter" class="text-xs font-mono font-bold text-indigo-400 whitespace-nowrap">1 / 9</span>
+        </div>
+
+        <!-- Speed control -->
+        <div class="flex items-center space-x-2 text-xs text-slate-400">
+          <span>Speed:</span>
+          <select id="anim-speed" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none">
+            <option value="1200">Slow</option>
+            <option value="700" selected>Normal</option>
+            <option value="300">Fast</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Grids View Container -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        
+        <!-- Input Grid Card (Padded Input) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3 flex flex-col">
+          <div class="flex justify-between items-center">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block"></span> Input Matrix 
+              <span id="padded-dim-tag" class="text-slate-500 font-mono text-[10px]">(Padded: 7x7)</span>
+            </h3>
+            <div class="flex items-center space-x-2 text-[10px]">
+              <span class="flex items-center gap-1 text-slate-400"><span class="w-2 h-2 rounded bg-sky-900 border border-sky-500 inline-block"></span> Pad</span>
+              <span class="flex items-center gap-1 text-slate-400"><span class="w-2 h-2 rounded bg-amber-500 inline-block"></span> Kernel Kernel</span>
+            </div>
+          </div>
+
+          <!-- Input Matrix Wrapper -->
+          <div class="flex-1 flex items-center justify-center p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[260px] overflow-auto">
+            <div id="input-grid-container" class="grid gap-1 transition-all duration-300">
+              <!-- Grid generated dynamically -->
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 text-center">Click input cells to edit matrix values.</p>
+        </div>
+
+        <!-- Kernel & Output Feature Map Stack -->
+        <div class="space-y-6">
+
+          <!-- Kernel Matrix Card -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-2">
+            <div class="flex justify-between items-center">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-3.5 h-3.5"></i> Kernel Weights ($K \times K$)
+              </h3>
+              <span id="kernel-dim-tag" class="text-slate-400 font-mono text-[10px]">3x3</span>
+            </div>
+            <div class="flex items-center justify-center p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[100px]">
+              <div id="kernel-grid-container" class="grid gap-1">
+                <!-- Kernel grid generated dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Output Grid Card -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Output Feature Map
+              </h3>
+              <span id="output-dim-tag" class="text-indigo-300 font-mono text-[10px] font-bold">3x3</span>
+            </div>
+            <div class="flex items-center justify-center p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[140px] overflow-auto">
+              <div id="output-grid-container" class="grid gap-1">
+                <!-- Output grid generated dynamically -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Live Dot-Product Calculation Inspector -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i> Active Pixel Calculation Trace
+          </h3>
+          <span id="active-cell-coord" class="text-xs font-mono font-bold text-indigo-400 bg-slate-800 px-2 py-0.5 rounded">
+            Output [0, 0]
+          </span>
+        </div>
+
+        <div id="calculation-trace" class="font-mono text-xs text-slate-300 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto space-y-2">
+          <!-- Dynamic trace details -->
+        </div>
+      </div>
+
+      <!-- Educational Visual Concept Guide -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+          <i data-lucide="book-open" class="w-4 h-4 text-sky-400"></i> Key Concepts & Intuition Guide
+        </h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <!-- Padding -->
+          <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+            <div class="flex items-center gap-2 text-sky-400 font-semibold">
+              <i data-lucide="square" class="w-4 h-4"></i> Padding ($P$)
+            </div>
+            <p class="text-slate-400 leading-relaxed">
+              Adds border pixels (typically zeros) around the input. <strong>Why?</strong> Prevents spatial dimensions from shrinking rapidly across deep layers and allows border edge pixels to contribute equally to features.
+            </p>
+          </div>
+
+          <!-- Stride -->
+          <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+            <div class="flex items-center gap-2 text-emerald-400 font-semibold">
+              <i data-lucide="arrow-right text-emerald-400" class="w-4 h-4"></i> Stride ($S$)
+            </div>
+            <p class="text-slate-400 leading-relaxed">
+              The step size of the kernel movement. <strong>$S > 1$</strong> downsamples the spatial size of the feature map without max pooling, skipping adjacent pixel computations.
+            </p>
+          </div>
+
+          <!-- Dilation -->
+          <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+            <div class="flex items-center gap-2 text-rose-400 font-semibold">
+              <i data-lucide="maximize-2" class="w-4 h-4 text-rose-400"></i> Dilation ($D$)
+            </div>
+            <p class="text-slate-400 leading-relaxed">
+              Expands the kernel's coverage by inserting spaces between weights (Atrous Conv). Increases <strong>receptive field</strong> significantly without increasing parameter count or compute weights!
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Notification Modal / Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-indigo-600 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium translate-y-20 opacity-0 transition-all duration-300 pointer-events-none z-50 flex items-center gap-2">
+    <i data-lucide="check-circle" class="w-4 h-4"></i> <span id="toast-msg">Copied to clipboard!</span>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    // Global Application State
+    let state = {
+      H: 5,         // Input height & width
+      K: 3,         // Kernel height & width
+      P: 1,         // Padding
+      S: 1,         // Stride
+      D: 1,         // Dilation
+      currentStep: 0,
+      isPlaying: false,
+      playTimer: null,
+      inputMatrix: [],
+      kernelMatrix: []
+    };
+
+    // Predefined Kernel Weights
+    const KERNEL_PRESETS = {
+      'sobel-v': [
+        [-1, 0, 1],
+        [-2, 0, 2],
+        [-1, 0, 1]
+      ],
+      'sobel-h': [
+        [-1, -2, -1],
+        [ 0,  0,  0],
+        [ 1,  2,  1]
+      ],
+      'sharpen': [
+        [ 0, -1,  0],
+        [-1,  5, -1],
+        [ 0, -1,  0]
+      ],
+      'outline': [
+        [-1, -1, -1],
+        [-1,  8, -1],
+        [-1, -1, -1]
+      ],
+      'ones': [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1]
+      ],
+      'identity': [
+        [0, 0, 0],
+        [0, 1, 0],
+        [0, 0, 0]
+      ]
+    };
+
+    let totalSteps = 0;
+    let outputCoords = []; // Array of {outR, outC, topL_R, topL_C}
+
+    // Initialize application on window load
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initMatrixValues();
+      setupEventListeners();
+      updateAll();
+    });
+
+    // Setup input matrix values with default pattern
+    function initMatrixValues() {
+      // Default sample 5x5 image matrix values
+      state.inputMatrix = [];
+      for (let r = 0; r < state.H; r++) {
+        let row = [];
+        for (let c = 0; c < state.W; c++) {
+          // Gradient pattern
+          row.push((r + 1) * 2 + c);
+        }
+        state.inputMatrix.push(row);
+      }
+
+      applyKernelPreset(document.getElementById('kernel-preset').value);
+    }
+
+    // Apply Kernel Preset or resize kernel
+    function applyKernelPreset(presetKey) {
+      const k = state.K;
+      state.kernelMatrix = [];
+
+      if (k === 3 && KERNEL_PRESETS[presetKey]) {
+        state.kernelMatrix = KERNEL_PRESETS[presetKey].map(row => [...row]);
+      } else {
+        // Fallback for non-3x3 sizes
+        for (let r = 0; r < k; r++) {
+          let row = [];
+          for (let c = 0; c < k; c++) {
+            if (r === Math.floor(k/2) && c === Math.floor(k/2)) row.push(1);
+            else row.push(0);
+          }
+          state.kernelMatrix.push(row);
+        }
+      }
+    }
+
+    // Setup DOM Listeners
+    function setupEventListeners() {
+      document.getElementById('input-size').addEventListener('input', (e) => {
+        state.H = parseInt(e.target.value);
+        document.getElementById('input-size-val').textContent = `${state.H} × ${state.H}`;
+        initMatrixValues();
+        updateAll();
+      });
+
+      document.getElementById('kernel-size').addEventListener('input', (e) => {
+        state.K = parseInt(e.target.value);
+        document.getElementById('kernel-size-val').textContent = `${state.K} × ${state.K}`;
+        applyKernelPreset(document.getElementById('kernel-preset').value);
+        updateAll();
+      });
+
+      document.getElementById('padding').addEventListener('input', (e) => {
+        state.P = parseInt(e.target.value);
+        document.getElementById('padding-val').textContent = state.P;
+        updateAll();
+      });
+
+      document.getElementById('stride').addEventListener('input', (e) => {
+        state.S = parseInt(e.target.value);
+        document.getElementById('stride-val').textContent = state.S;
+        updateAll();
+      });
+
+      document.getElementById('dilation').addEventListener('input', (e) => {
+        state.D = parseInt(e.target.value);
+        document.getElementById('dilation-val').textContent = state.D;
+        updateAll();
+      });
+
+      document.getElementById('kernel-preset').addEventListener('change', (e) => {
+        applyKernelPreset(e.target.value);
+        updateAll();
+      });
+
+      document.getElementById('step-slider').addEventListener('input', (e) => {
+        pause();
+        goToStep(parseInt(e.target.value));
+      });
+    }
+
+    // Calculate effective kernel size with dilation
+    function getEffectiveKernelSize() {
+      return state.D * (state.K - 1) + 1;
+    }
+
+    // Calculate Output Dimension
+    function getOutputDimension() {
+      const K_eff = getEffectiveKernelSize();
+      const num = state.H + 2 * state.P - K_eff;
+      if (num < 0) return 0;
+      return Math.floor(num / state.S) + 1;
+    }
+
+    // Master Update Function
+    function updateAll() {
+      const outDim = getOutputDimension();
+      const K_eff = getEffectiveKernelSize();
+
+      // Update Formula Text
+      const formulaEl = document.getElementById('formula-calculation');
+      if (outDim <= 0) {
+        formulaEl.innerHTML = `<span class="text-rose-400 font-bold">Invalid Configuration:</span> Kernel receptive field (${K_eff}x${K_eff}) exceeds padded input size (${state.H + 2*state.P}x${state.H + 2*state.P}).`;
+      } else {
+        formulaEl.innerHTML = `
+          <div><span class="text-slate-400">Padded Input Size:</span> ${state.H} + 2(${state.P}) = <span class="text-sky-400 font-bold">${state.H + 2*state.P}</span></div>
+          <div><span class="text-slate-400">Effective Kernel Size ($K_{eff}$):</span> ${state.K} + (${state.K}-1)(${state.D}-1) = <span class="text-amber-400 font-bold">${K_eff}</span></div>
+          <div><span class="text-slate-400">Output Calculation:</span> floor((${state.H + 2*state.P} - ${K_eff}) / ${state.S}) + 1 = <span class="text-indigo-400 font-bold">${outDim} × ${outDim}</span></div>
+        `;
+      }
+
+      document.getElementById('effective-kernel').textContent = `${K_eff} × ${K_eff}`;
+      document.getElementById('receptive-field').textContent = `${K_eff} × ${K_eff}`;
+
+      // Update PyTorch Code
+      document.getElementById('pytorch-code').textContent = 
+`# PyTorch Conv2d Definition
+conv = nn.Conv2d(
+    in_channels=1, 
+    out_channels=1, 
+    kernel_size=${state.K}, 
+    stride=${state.S}, 
+    padding=${state.P}, 
+    dilation=${state.D}
+)
+# Input tensor shape: (batch_size=1, channels=1, H=${state.H}, W=${state.H})
+# Output tensor shape: (1, 1, ${outDim}, ${outDim})`;
+
+      // Calculate Step Coordinates
+      outputCoords = [];
+      if (outDim > 0) {
+        for (let r = 0; r < outDim; r++) {
+          for (let c = 0; c < outDim; c++) {
+            const startR = r * state.S;
+            const startC = c * state.S;
+            outputCoords.push({ outR: r, outC: c, startR, startC });
+          }
+        }
+      }
+
+      totalSteps = outputCoords.length;
+      const slider = document.getElementById('step-slider');
+      slider.max = Math.max(0, totalSteps - 1);
+
+      if (state.currentStep >= totalSteps) {
+        state.currentStep = Math.max(0, totalSteps - 1);
+      }
+
+      slider.value = state.currentStep;
+
+      // Update Tags
+      document.getElementById('padded-dim-tag').textContent = `(Padded: ${state.H + 2*state.P}×${state.H + 2*state.P})`;
+      document.getElementById('kernel-dim-tag').textContent = `${state.K}×${state.K}`;
+      document.getElementById('output-dim-tag').textContent = `${outDim}×${outDim}`;
+
+      // Render All Grids
+      renderInputGrid();
+      renderKernelGrid();
+      renderOutputGrid();
+      updateCalculationTrace();
+
+      // Update Step Counter
+      document.getElementById('step-counter').textContent = totalSteps > 0 ? `${state.currentStep + 1} / ${totalSteps}` : `0 / 0`;
+    }
+
+    // Construct full padded input matrix
+    function getPaddedMatrix() {
+      const paddedSize = state.H + 2 * state.P;
+      let grid = [];
+
+      for (let r = 0; r < paddedSize; r++) {
+        let row = [];
+        for (let c = 0; c < paddedSize; c++) {
+          const origR = r - state.P;
+          const origC = c - state.P;
+
+          if (origR >= 0 && origR < state.H && origC >= 0 && origC < state.W) {
+            row.push({
+              val: state.inputMatrix[origR][origC],
+              isPadding: false,
+              origR,
+              origC
+            });
+          } else {
+            row.push({
+              val: 0,
+              isPadding: true,
+              origR: null,
+              origC: null
+            });
+          }
+        }
+        grid.push(row);
+      }
+      return grid;
+    }
+
+    function renderInputGrid() {
+      const container = document.getElementById('input-grid-container');
+      container.innerHTML = '';
+
+      const paddedSize = state.H + 2 * state.P;
+      container.style.gridTemplateColumns = `repeat(${paddedSize}, minmax(0, 1fr))`;
+
+      const paddedMatrix = getPaddedMatrix();
+      const currentStepData = outputCoords[state.currentStep];
+
+      // Determine active overlapping cells for the kernel
+      let activeIndices = new Map(); // key: "r,c" -> weight val
+      let dilatedGapIndices = new Set();
+
+      if (currentStepData) {
+        const { startR, startC } = currentStepData;
+        const K_eff = getEffectiveKernelSize();
+
+        for (let kr = 0; kr < state.K; kr++) {
+          for (let kc = 0; kc < state.K; kc++) {
+            const pr = startR + kr * state.D;
+            const pc = startC + kc * state.D;
+            activeIndices.set(`${pr},${pc}`, state.kernelMatrix[kr][kc]);
+          }
+        }
+
+        // Bounding box area for dilated coverage
+        for (let dr = 0; dr < K_eff; dr++) {
+          for (let dc = 0; dc < K_eff; dc++) {
+            const pr = startR + dr;
+            const pc = startC + dc;
+            if (!activeIndices.has(`${pr},${pc}`)) {
+              dilatedGapIndices.add(`${pr},${pc}`);
+            }
+          }
+        }
+      }
+
+      for (let r = 0; r < paddedSize; r++) {
+        for (let c = 0; c < paddedSize; c++) {
+          const cellData = paddedMatrix[r][c];
+          const key = `${r},${c}`;
+          const isActive = activeIndices.has(key);
+          const isGap = dilatedGapIndices.has(key);
+
+          const cell = document.createElement('div');
+          cell.className = `w-8 h-8 sm:w-10 sm:h-10 flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold transition-all border relative cursor-pointer grid-cell`;
+
+          if (isActive) {
+            const wVal = activeIndices.get(key);
+            cell.className += ` bg-amber-500/30 border-amber-500 text-amber-200 ring-2 ring-amber-400 z-10 scale-105 shadow-lg shadow-amber-500/20`;
+            cell.innerHTML = `
+              <span>${cellData.val}</span>
+              <span class="text-[9px] text-amber-400 font-normal">×${wVal}</span>
+            `;
+          } else if (isGap) {
+            cell.className += ` bg-rose-950/40 border-rose-800/80 text-rose-300/80`;
+            cell.innerHTML = `<span>${cellData.val}</span>`;
+          } else if (cellData.isPadding) {
+            cell.className += ` bg-slate-800/40 border-slate-700/60 text-sky-400/70 border-dashed`;
+            cell.innerHTML = `<span>${cellData.val}</span>`;
+          } else {
+            cell.className += ` bg-slate-900 border-slate-800 text-slate-200 hover:border-indigo-500`;
+            cell.innerHTML = `<span>${cellData.val}</span>`;
+          }
+
+          // Cell click handler to edit original matrix
+          if (!cellData.isPadding) {
+            cell.addEventListener('click', () => {
+              const newNum = prompt(`Enter new value for cell [${cellData.origR}, ${cellData.origC}]:`, cellData.val);
+              if (newNum !== null && !isNaN(parseInt(newNum))) {
+                state.inputMatrix[cellData.origR][cellData.origC] = parseInt(newNum);
+                updateAll();
+              }
+            });
+          }
+
+          container.appendChild(cell);
+        }
+      }
+    }
+
+    // Render Kernel Grid
+    function renderKernelGrid() {
+      const container = document.getElementById('kernel-grid-container');
+      container.innerHTML = '';
+      container.style.gridTemplateColumns = `repeat(${state.K}, minmax(0, 1fr))`;
+
+      for (let r = 0; r < state.K; r++) {
+        for (let c = 0; c < state.K; c++) {
+          const cell = document.createElement('div');
+          const val = state.kernelMatrix[r][c];
+          cell.className = `w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg text-xs font-mono font-bold bg-amber-950/60 border border-amber-600/80 text-amber-300 cursor-pointer hover:bg-amber-900/80 transition`;
+          cell.textContent = val;
+
+          cell.addEventListener('click', () => {
+            const newNum = prompt(`Enter new kernel weight for [${r}, ${c}]:`, val);
+            if (newNum !== null && !isNaN(parseInt(newNum))) {
+              state.kernelMatrix[r][c] = parseInt(newNum);
+              updateAll();
+            }
+          });
+
+          container.appendChild(cell);
+        }
+      }
+    }
+
+    // Compute Full Output Feature Map
+    function computeOutputMatrix() {
+      const outDim = getOutputDimension();
+      if (outDim <= 0) return [];
+
+      const paddedMatrix = getPaddedMatrix();
+      let output = [];
+
+      for (let r = 0; r < outDim; r++) {
+        let row = [];
+        for (let c = 0; c < outDim; c++) {
+          const startR = r * state.S;
+          const startC = c * state.S;
+          let sum = 0;
+
+          for (let kr = 0; kr < state.K; kr++) {
+            for (let kc = 0; kc < state.K; kc++) {
+              const pr = startR + kr * state.D;
+              const pc = startC + kc * state.D;
+              const inputVal = paddedMatrix[pr][pc].val;
+              const weightVal = state.kernelMatrix[kr][kc];
+              sum += inputVal * weightVal;
+            }
+          }
+          row.push(sum);
+        }
+        output.push(row);
+      }
+      return output;
+    }
+
+    // Render Output Grid
+    function renderOutputGrid() {
+      const container = document.getElementById('output-grid-container');
+      container.innerHTML = '';
+
+      const outDim = getOutputDimension();
+      if (outDim <= 0) {
+        container.innerHTML = `<div class="text-xs text-rose-400 p-2">Invalid output size</div>`;
+        return;
+      }
+
+      container.style.gridTemplateColumns = `repeat(${outDim}, minmax(0, 1fr))`;
+      const outputMatrix = computeOutputMatrix();
+      const currentStepData = outputCoords[state.currentStep];
+
+      for (let r = 0; r < outDim; r++) {
+        for (let c = 0; c < outDim; c++) {
+          const cell = document.createElement('div');
+          const val = outputMatrix[r][c];
+          const isCurrent = currentStepData && currentStepData.outR === r && currentStepData.outC === c;
+
+          cell.className = `w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer `;
+
+          if (isCurrent) {
+            cell.className += `bg-indigo-600 border-indigo-400 text-white ring-4 ring-indigo-500/40 scale-110 shadow-xl shadow-indigo-600/40 z-10`;
+          } else {
+            cell.className += `bg-slate-900 border-slate-800 text-indigo-300 hover:border-indigo-500/60`;
+          }
+
+          cell.textContent = val;
+
+          // Click output cell to jump directly to that step
+          const stepIdx = outputCoords.findIndex(item => item.outR === r && item.outC === c);
+          if (stepIdx !== -1) {
+            cell.addEventListener('click', () => {
+              pause();
+              goToStep(stepIdx);
+            });
+          }
+
+          container.appendChild(cell);
+        }
+      }
+    }
+
+    // Update active pixel calculation trace panel
+    function updateCalculationTrace() {
+      const traceEl = document.getElementById('calculation-trace');
+      const coordEl = document.getElementById('active-cell-coord');
+
+      if (outputCoords.length === 0 || !outputCoords[state.currentStep]) {
+        coordEl.textContent = `N/A`;
+        traceEl.innerHTML = `<span class="text-slate-500">No calculation available for current dimensions.</span>`;
+        return;
+      }
+
+      const { outR, outC, startR, startC } = outputCoords[state.currentStep];
+      coordEl.textContent = `Output [Row ${outR}, Col ${outC}]`;
+
+      const paddedMatrix = getPaddedMatrix();
+      let terms = [];
+      let totalSum = 0;
+
+      for (let kr = 0; kr < state.K; kr++) {
+        for (let kc = 0; kc < state.K; kc++) {
+          const pr = startR + kr * state.D;
+          const pc = startC + kc * state.D;
+          const inVal = paddedMatrix[pr][pc].val;
+          const kVal = state.kernelMatrix[kr][kc];
+          const prod = inVal * kVal;
+          totalSum += prod;
+
+          const isPad = paddedMatrix[pr][pc].isPadding;
+          const padLabel = isPad ? ` <span class="text-sky-400 text-[10px]">(Pad)</span>` : ``;
+
+          terms.push(`(${inVal}${padLabel} × ${kVal})`);
+        }
+      }
+
+      traceEl.innerHTML = `
+        <div class="text-slate-400 text-[11px] mb-1">
+          Top-Left Receptive Corner on Padded Grid: <span class="text-amber-400">[${startR}, ${startC}]</span>
+        </div>
+        <div class="leading-relaxed text-slate-200">
+          <span class="text-indigo-400 font-bold">Sum = </span>
+          ${terms.join(' + ')}
+        </div>
+        <div class="pt-2 text-sm border-t border-slate-800/80 font-bold text-emerald-400 flex justify-between items-center">
+          <span>Resulting Feature Pixel Value:</span>
+          <span class="text-base bg-emerald-950/60 border border-emerald-700/50 px-2.5 py-0.5 rounded-lg">${totalSum}</span>
+        </div>
+      `;
+    }
+
+    // Animation Controls
+    function goToStep(step) {
+      if (totalSteps === 0) return;
+      state.currentStep = Math.max(0, Math.min(step, totalSteps - 1));
+      document.getElementById('step-slider').value = state.currentStep;
+      document.getElementById('step-counter').textContent = `${state.currentStep + 1} / ${totalSteps}`;
+      renderInputGrid();
+      renderOutputGrid();
+      updateCalculationTrace();
+    }
+
+    function stepForward() {
+      if (totalSteps === 0) return;
+      if (state.currentStep < totalSteps - 1) {
+        goToStep(state.currentStep + 1);
+      } else {
+        pause();
+      }
+    }
+
+    function stepBackward() {
+      if (totalSteps === 0) return;
+      goToStep(state.currentStep - 1);
+    }
+
+    function togglePlay() {
+      if (state.isPlaying) {
+        pause();
+      } else {
+        play();
+      }
+    }
+
+    function play() {
+      if (totalSteps === 0) return;
+      state.isPlaying = true;
+      document.getElementById('play-icon').setAttribute('data-lucide', 'pause');
+      document.getElementById('play-text').textContent = 'Pause';
+      lucide.createIcons();
+
+      if (state.currentStep >= totalSteps - 1) {
+        goToStep(0);
+      }
+
+      const speed = parseInt(document.getElementById('anim-speed').value);
+      state.playTimer = setInterval(() => {
+        if (state.currentStep < totalSteps - 1) {
+          stepForward();
+        } else {
+          pause();
+        }
+      }, speed);
+    }
+
+    function pause() {
+      state.isPlaying = false;
+      document.getElementById('play-icon').setAttribute('data-lucide', 'play');
+      document.getElementById('play-text').textContent = 'Play Visualizer';
+      lucide.createIcons();
+      if (state.playTimer) {
+        clearInterval(state.playTimer);
+        state.playTimer = null;
+      }
+    }
+
+    // Educational Presets Handler
+    function loadPreset(type) {
+      pause();
+      switch (type) {
+        case 'standard':
+          state.H = 5; state.K = 3; state.P = 0; state.S = 1; state.D = 1;
+          break;
+        case 'same':
+          state.H = 5; state.K = 3; state.P = 1; state.S = 1; state.D = 1;
+          break;
+        case 'strided':
+          state.H = 6; state.K = 3; state.P = 1; state.S = 2; state.D = 1;
+          break;
+        case 'dilated':
+          state.H = 7; state.K = 3; state.P = 0; state.S = 1; state.D = 2;
+          break;
+        case 'complex':
+          state.H = 7; state.K = 3; state.P = 2; state.S = 2; state.D = 2;
+          break;
+      }
+
+      // Sync slider UI elements
+      document.getElementById('input-size').value = state.H;
+      document.getElementById('input-size-val').textContent = `${state.H} × ${state.H}`;
+      document.getElementById('kernel-size').value = state.K;
+      document.getElementById('kernel-size-val').textContent = `${state.K} × ${state.K}`;
+      document.getElementById('padding').value = state.P;
+      document.getElementById('padding-val').textContent = state.P;
+      document.getElementById('stride').value = state.S;
+      document.getElementById('stride-val').textContent = state.S;
+      document.getElementById('dilation').value = state.D;
+      document.getElementById('dilation-val').textContent = state.D;
+
+      initMatrixValues();
+      updateAll();
+      goToStep(0);
+      showToast(`Loaded ${type.toUpperCase()} Preset!`);
+    }
+
+    // Toast Notification helper
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 2500);
+    }
+
+    // Copy PyTorch Code
+    function copyCode() {
+      const codeText = document.getElementById('pytorch-code').textContent;
+      navigator.clipboard.writeText(codeText).then(() => {
+        showToast("PyTorch snippet copied to clipboard!");
+      }).catch(() => {
+        showToast("Copied code!");
+      });
+    }
+  </script>
+</body>
+</html>
