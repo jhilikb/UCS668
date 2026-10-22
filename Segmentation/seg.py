@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 from PIL import Image
 
-st.set_page_config(page_title="Deep Learning Segmentation Masterclass", layout="wide")
+st.set_page_config(page_title="Deep Learning Segmentation", layout="wide")
 
 # Custom CSS to elevate UI
 st.html("""
@@ -13,7 +13,7 @@ st.html("""
 </style>
 """)
 
-st.title("🔬 Deep Learning Image Segmentation: Interactive Masterclass")
+st.title("🔬 Deep Learning Image Segmentation")
 
 # Dynamic Lesson Navigation
 module = st.sidebar.radio("Navigate Modules", [
