@@ -92,7 +92,7 @@ with tab1:
             It’s like chopping off whole stems to reshape the garden. For example remove 50%(amount=0.5) of output neurons(dim=0) using smallest l2 norm values (n=2)
             """)
             amount = st.slider("Pruning Amount (%)", 0.0, 0.9, 0.4)
-            prune.ln_structured(model.fc, name="weight", amount=0.5, n=2, dim=1)
+            prune.ln_structured(model.fc, name="weight", amount=amount, n=2, dim=1)
             st.code("""
             prune.ln_structured(model, name="weight", amount=0.5, n=2, dim=1)
             """, language="python")
@@ -110,7 +110,7 @@ with tab1:
     (model.fc, 'weight'),
 ]
             amount = st.slider("Pruning Amount (%)", 0.0, 0.9, 0.4)
-            prune.global_unstructured(parameters_to_prune, pruning_method=prune.L1Unstructured, amount=0.4)
+            prune.global_unstructured(parameters_to_prune, pruning_method=prune.L1Unstructured, amount=amount)
             st.code("""
             modules = [(model, 'weight')]
             prune.global_unstructured(modules, pruning_method=prune.L1Unstructured, amount=0.4)
